@@ -1,44 +1,36 @@
+using OpenAI.Chat;
 using PipelineNoteGrounder.Utils;
 
 namespace PipelineNoteGrounder.Pipeline;
 
 static class Search
 {
-    static readonly object ResponseFormat = new
-    {
-        type = "json_schema",
-        json_schema = new
-        {
-            name   = "search_result",
-            strict = true,
-            schema = new
+    static readonly ChatResponseFormat ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+        jsonSchemaFormatName: "search_result",
+        jsonSchema: BinaryData.FromString("""
             {
-                type = "object",
-                properties = new
-                {
-                    summary   = new { type = "string" },
-                    keyPoints = new { type = "array", items = new { type = "string" } },
-                    sources   = new
-                    {
-                        type  = "array",
-                        items = new
-                        {
-                            type = "object",
-                            properties = new
-                            {
-                                title = new { type = new[] { "string", "null" } },
-                                url   = new { type = "string" }
-                            },
-                            required             = new[] { "title", "url" },
-                            additionalProperties = false
-                        }
-                    }
-                },
-                required             = new[] { "summary", "keyPoints", "sources" },
-                additionalProperties = false
+              "type": "object",
+              "properties": {
+                "summary":   { "type": "string" },
+                "keyPoints": { "type": "array", "items": { "type": "string" } },
+                "sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "title": { "type": ["string","null"] },
+                      "url":   { "type": "string" }
+                    },
+                    "required": ["title","url"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["summary","keyPoints","sources"],
+              "additionalProperties": false
             }
-        }
-    };
+            """),
+        jsonSchemaIsStrict: true);
 
     public static async Task<SearchResult> RunAsync(
         ExtractResult extracted,
@@ -62,8 +54,8 @@ static class Search
             Console.WriteLine("  [search] no concepts to search — skipping");
             var empty = new SearchResult
             {
-                SourceFile        = config.InputFile,
-                Model             = config.Ai.SearchModel,
+                SourceFile         = config.InputFile,
+                Model              = config.Ai.SearchModel,
                 ResultsByCanonical = []
             };
             await Cache.WriteAsync(outputPath, empty);
@@ -77,14 +69,20 @@ static class Search
 
         Console.WriteLine($"  [search] searching {pending.Count}/{canonicals.Count} concepts...");
 
+        var pendingIndexed = pending.Select((item, i) => (item, i)).ToList();
+
         var newResults = await Batch.RunAsync(
-            pending,
+            pendingIndexed,
             config.Pipeline.BatchSize,
-            async item =>
+            async tuple =>
             {
-                Console.WriteLine($"    searching: {item.Canonical}");
-                return await SearchOneAsync(item, api, config.Ai.SearchModel);
-            });
+                var (item, i) = tuple;
+                Console.WriteLine($"    [{i + 1}/{pending.Count}] searching: {item.Canonical}");
+                var entry = await SearchOneAsync(item, api, config.Ai.SearchModel);
+                Console.WriteLine($"    [{i + 1}/{pending.Count}] done: {item.Canonical}");
+                return entry;
+            },
+            config.Pipeline.RequestDelayMs);
 
         var combined = new Dictionary<string, SearchEntry>(alreadySearched);
         foreach (var entry in newResults)
@@ -104,10 +102,10 @@ static class Search
 
     static async Task<SearchEntry> SearchOneAsync(CanonicalItem item, ApiClient api, string model)
     {
-        var messages = new List<object>
+        var messages = new List<ChatMessage>
         {
-            new { role = "system", content = SystemPrompt },
-            new { role = "user",   content = BuildUserPrompt(item) }
+            new SystemChatMessage(SystemPrompt),
+            new UserChatMessage(BuildUserPrompt(item))
         };
 
         var output = await api.ChatJsonAsync<SearchOutput>(model, messages, ResponseFormat);

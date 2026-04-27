@@ -1,3 +1,4 @@
+using OpenAI.Chat;
 using PipelineNoteGrounder.Utils;
 
 namespace PipelineNoteGrounder.Pipeline;
@@ -7,43 +8,34 @@ static class Extract
     const int MaxHeaderConcepts = 1;
     const int MaxBodyConcepts   = 5;
 
-    static readonly object ResponseFormat = new
-    {
-        type = "json_schema",
-        json_schema = new
-        {
-            name   = "concept_extraction",
-            strict = true,
-            schema = new
+    static readonly ChatResponseFormat ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+        jsonSchemaFormatName: "concept_extraction",
+        jsonSchema: BinaryData.FromString("""
             {
-                type = "object",
-                properties = new
-                {
-                    concepts = new
-                    {
-                        type  = "array",
-                        items = new
-                        {
-                            type = "object",
-                            properties = new
-                            {
-                                label        = new { type = "string" },
-                                category     = new { type = "string", @enum = ConceptCategories.All },
-                                needsSearch  = new { type = "boolean" },
-                                searchQuery  = new { type = new[] { "string", "null" } },
-                                reason       = new { type = "string" },
-                                surfaceForms = new { type = "array", items = new { type = "string" } }
-                            },
-                            required             = new[] { "label", "category", "needsSearch", "searchQuery", "reason", "surfaceForms" },
-                            additionalProperties = false
-                        }
-                    }
-                },
-                required             = new[] { "concepts" },
-                additionalProperties = false
+              "type": "object",
+              "properties": {
+                "concepts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label":        { "type": "string" },
+                      "category":     { "type": "string", "enum": ["claim","result","method","metric","resource","definition","term","entity","reference"] },
+                      "needsSearch":  { "type": "boolean" },
+                      "searchQuery":  { "type": ["string","null"] },
+                      "reason":       { "type": "string" },
+                      "surfaceForms": { "type": "array", "items": { "type": "string" } }
+                    },
+                    "required": ["label","category","needsSearch","searchQuery","reason","surfaceForms"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["concepts"],
+              "additionalProperties": false
             }
-        }
-    };
+            """),
+        jsonSchemaIsStrict: true);
 
     public static async Task<ExtractResult> RunAsync(string markdown, ApiClient api, AppConfig config)
     {
@@ -67,8 +59,9 @@ static class Extract
             {
                 var p = paragraphs[i];
                 var isHeader = Markdown.IsHeader(p);
+                Console.WriteLine($"    [{i + 1}/{paragraphs.Count}] extracting...");
                 var concepts = await ExtractParagraphAsync(p, isHeader, api, config.Ai.ExtractModel);
-                Console.WriteLine($"    [{i + 1}/{paragraphs.Count}] {concepts.Count} concept(s)");
+                Console.WriteLine($"    [{i + 1}/{paragraphs.Count}] done — {concepts.Count} concept(s)");
                 return new ParagraphResult
                 {
                     Index    = i,
@@ -77,7 +70,8 @@ static class Extract
                     Type     = isHeader ? "header" : "body",
                     Concepts = concepts
                 };
-            });
+            },
+            config.Pipeline.RequestDelayMs);
 
         var ordered = results.OrderBy(r => r.Index).ToList();
         var allConcepts = ordered.SelectMany(r => r.Concepts).ToList();
@@ -101,10 +95,10 @@ static class Extract
     static async Task<List<Concept>> ExtractParagraphAsync(string paragraph, bool isHeader, ApiClient api, string model)
     {
         var targetCount = isHeader ? MaxHeaderConcepts : MaxBodyConcepts;
-        var messages = new List<object>
+        var messages = new List<ChatMessage>
         {
-            new { role = "system", content = SystemPrompt },
-            new { role = "user",   content = BuildUserPrompt(paragraph, targetCount) }
+            new SystemChatMessage(SystemPrompt),
+            new UserChatMessage(BuildUserPrompt(paragraph, targetCount))
         };
 
         var output = await api.ChatJsonAsync<ExtractOutput>(model, messages, ResponseFormat);

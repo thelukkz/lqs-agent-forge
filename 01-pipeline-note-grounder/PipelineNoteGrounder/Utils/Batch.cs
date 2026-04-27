@@ -5,7 +5,8 @@ static class Batch
     public static async Task<List<TResult>> RunAsync<TItem, TResult>(
         IEnumerable<TItem> items,
         int concurrency,
-        Func<TItem, Task<TResult>> work)
+        Func<TItem, Task<TResult>> work,
+        int delayMs = 0)
     {
         var results = new List<TResult>();
         var semaphore = new SemaphoreSlim(concurrency);
@@ -13,7 +14,13 @@ static class Batch
         var tasks = items.Select(async item =>
         {
             await semaphore.WaitAsync();
-            try   { return await work(item); }
+            try
+            {
+                var result = await work(item);
+                if (delayMs > 0)
+                    await Task.Delay(delayMs);
+                return result;
+            }
             finally { semaphore.Release(); }
         });
 

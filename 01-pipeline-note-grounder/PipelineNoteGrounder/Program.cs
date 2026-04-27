@@ -28,6 +28,11 @@ try
 
     Console.WriteLine();
     Console.WriteLine("Done.");
+    Console.WriteLine();
+    Console.WriteLine($"  requests:       {api.Usage.Requests}");
+    Console.WriteLine($"  tokens in:      {api.Usage.InputTokens:N0}");
+    Console.WriteLine($"  tokens out:     {api.Usage.OutputTokens:N0}");
+    Console.WriteLine($"  tokens total:   {api.Usage.TotalTokens:N0}");
 }
 catch (Exception ex)
 {

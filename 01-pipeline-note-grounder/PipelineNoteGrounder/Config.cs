@@ -18,6 +18,7 @@ record PipelineSettings
     public int BatchSize { get; init; } = 5;
     public int TimeoutSeconds { get; init; } = 180;
     public int Retries { get; init; } = 3;
+    public int RequestDelayMs { get; init; } = 0;
 }
 
 record AppConfig
