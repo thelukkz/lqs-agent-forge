@@ -11,6 +11,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 01 | [Pipeline Note Grounder](#01--pipeline-note-grounder) | Transforms a Markdown note into a self-contained HTML document with hover tooltips linking key concepts to their sources |
 | 02 | [Tool Conversation Demo](#02--tool-conversation-demo) | Demonstrates multi-turn conversation with an LLM: streaming responses, conversation history, and usage tracking |
 | 03 | [Pipeline Structured Extractor](#03--pipeline-structured-extractor) | Extracts structured person data (name, age, occupation, skills) from plain text using JSON Schema structured outputs |
+| 04 | [Agent Sandbox Filesystem](#04--agent-sandbox-filesystem) | Agent that performs sandboxed file operations via tool use (function calling) with path traversal protection |
 
 ---
 
@@ -102,3 +103,28 @@ dotnet run
 ```
 
 Configuration in `appsettings.json` — API base URL and model are adjustable without recompiling.
+
+---
+
+### 04 — Agent Sandbox Filesystem
+
+**Folder:** `04-agent-sandbox-filesystem`
+
+An agent that uses function calling to perform file operations (list, read, write, delete, create directory, get metadata) within an isolated sandbox directory. Includes a deliberate security test: attempting to escape the sandbox via `../` is blocked.
+
+**What it teaches:**
+
+1. **Tool use (function calling)** — tools are defined as JSON Schema objects passed to the model via `ChatCompletionOptions.Tools`. The model decides which tools to call and with what arguments; the application executes them and returns results. This loop continues until the model produces a final text response.
+2. **Agentic loop** — after each API call, check `FinishReason`. If it is `ToolCalls`, append the assistant message (including tool call metadata), execute each tool, append a `ToolChatMessage` per result, and call the API again. Repeat until `Stop` or a round limit is reached.
+3. **AssistantChatMessage with tool calls** — when adding the assistant's tool-calling turn to the history, construct it from the full `ChatCompletion` object so the tool call IDs and arguments are preserved. The subsequent `ToolChatMessage` entries reference these IDs to correlate results.
+4. **Sandbox path validation** — resolving user-supplied paths with `Path.GetFullPath` and checking that the result starts with the sandbox root prefix is the standard defense against path traversal attacks (`../`, absolute paths, symlink escapes).
+5. **Returning structured tool output** — tool handlers serialize their results as JSON objects (success/error/data fields) so the model can reliably interpret them without free-text parsing.
+
+**Run:**
+
+```bash
+cd 04-agent-sandbox-filesystem/AgentSandboxFilesystem
+dotnet run
+```
+
+The sandbox is created as a `sandbox/` folder next to the executable. Configuration in `appsettings.json` — API base URL and model are adjustable without recompiling.
