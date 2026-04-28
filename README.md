@@ -10,6 +10,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 |---|---------|-------------|
 | 01 | [Pipeline Note Grounder](#01--pipeline-note-grounder) | Transforms a Markdown note into a self-contained HTML document with hover tooltips linking key concepts to their sources |
 | 02 | [Tool Conversation Demo](#02--tool-conversation-demo) | Demonstrates multi-turn conversation with an LLM: streaming responses, conversation history, and usage tracking |
+| 03 | [Pipeline Structured Extractor](#03--pipeline-structured-extractor) | Extracts structured person data (name, age, occupation, skills) from plain text using JSON Schema structured outputs |
 
 ---
 
@@ -74,6 +75,29 @@ A minimal demonstration of a two-turn conversation with an LLM: asks a math ques
 
 ```bash
 cd 02-tool-conversation-demo/ToolConversationDemo
+dotnet run
+```
+
+Configuration in `appsettings.json` — API base URL and model are adjustable without recompiling.
+
+---
+
+### 03 — Pipeline Structured Extractor
+
+**Folder:** `03-pipeline-structured-extractor`
+
+Extracts structured person data (name, age, occupation, skills) from plain text using JSON Schema structured outputs.
+
+**What it teaches:**
+
+1. **Structured outputs** — passing a JSON Schema to the model via `ChatResponseFormat.CreateJsonSchemaFormat` with `strict: true` guarantees the response matches the schema exactly, eliminating the need to validate or defensively parse the model's reply.
+2. **Nullable fields in schema** — fields that may not appear in the source text (name, age, occupation) are declared as `["string", "null"]` or `["number", "null"]`, allowing the model to return `null` rather than hallucinate a value.
+3. **Typed deserialization** — the JSON response is deserialized directly into a C# record (`PersonInfo`) using `JsonSerializer`, giving compile-time safety and clean property access instead of dynamic `JsonNode` traversal.
+
+**Run:**
+
+```bash
+cd 03-pipeline-structured-extractor/PipelineStructuredExtractor
 dotnet run
 ```
 
