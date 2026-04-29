@@ -12,6 +12,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 02 | [Tool Conversation Demo](#02--tool-conversation-demo) | Demonstrates multi-turn conversation with an LLM: streaming responses, conversation history, and usage tracking |
 | 03 | [Pipeline Structured Extractor](#03--pipeline-structured-extractor) | Extracts structured person data (name, age, occupation, skills) from plain text using JSON Schema structured outputs |
 | 04 | [Agent Sandbox Filesystem](#04--agent-sandbox-filesystem) | Agent that performs sandboxed file operations via tool use (function calling) with path traversal protection |
+| 05 | [Agent MCP Core](#05--agent-mcp-core) | Demonstrates all core MCP capabilities (tools, resources, prompts, sampling, elicitation) via stdio transport |
 
 ---
 
@@ -128,3 +129,29 @@ dotnet run
 ```
 
 The sandbox is created as a `sandbox/` folder next to the executable. Configuration in `appsettings.json` — API base URL and model are adjustable without recompiling.
+
+---
+
+### 05 — Agent MCP Core
+
+**Folder:** `05-agent-mcp-core`
+
+A complete tour of the Model Context Protocol (MCP) in a single .NET project. The same executable runs as either an MCP server (spawned as a subprocess) or an MCP client — a switch determined by the `--server` command-line flag.
+
+**What it demonstrates:**
+
+1. **Tools** — Two tools registered on the server: `calculate` (basic arithmetic) and `summarize_with_confirmation` (a multi-step tool that chains elicitation and sampling before returning a result). The attribute-based model (`[McpServerToolType]` / `[McpServerTool]`) generates the JSON schema automatically from method signatures and `[Description]` attributes.
+2. **Resources** — Two resources accessible by URI: `config://project` (static JSON metadata) and `data://stats` (dynamic uptime and request count). The `[McpServerResourceType]` / `[McpServerResource]` attributes handle registration and URI routing.
+3. **Prompts** — A `code-review` prompt template that accepts parameters (`code`, `language`, `focus`) and returns a `GetPromptResult` with a pre-filled user message. The client retrieves it with `GetPromptAsync` and gets typed `PromptMessage` objects back.
+4. **Elicitation** — The server initiates a form request to the client via `McpServer.ElicitAsync`. The client handles it with an `ElicitationHandler` that auto-fills defaults from the `RequestedSchema` and returns `ElicitResult { Action = "accept" }`. This lets the server collect structured input without blocking on user interaction.
+5. **Sampling** — The server requests an LLM completion from the client via `McpServer.SampleAsync`. The client's `SamplingHandler` translates `CreateMessageRequestParams` into an OpenAI `ChatClient` call and returns a `CreateMessageResult`. The server never needs an API key — all AI calls go through the client.
+6. **Stdio transport** — The client spawns itself as a subprocess (`Process.GetCurrentProcess().MainModule.FileName --server`) and communicates over stdin/stdout using `StdioClientTransport`. The server suppresses console logging to keep the stdio channel clean for JSON-RPC.
+
+**Run:**
+
+```bash
+cd 05-agent-mcp-core/AgentMcpCore
+dotnet run
+```
+
+Configuration in `appsettings.json` — API base URL and model are adjustable without recompiling. By default it targets OpenRouter with `openai/gpt-4o-mini`.
