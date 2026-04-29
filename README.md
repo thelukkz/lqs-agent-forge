@@ -13,6 +13,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 03 | [Pipeline Structured Extractor](#03--pipeline-structured-extractor) | Extracts structured person data (name, age, occupation, skills) from plain text using JSON Schema structured outputs |
 | 04 | [Agent Sandbox Filesystem](#04--agent-sandbox-filesystem) | Agent that performs sandboxed file operations via tool use (function calling) with path traversal protection |
 | 05 | [Agent MCP Core](#05--agent-mcp-core) | Demonstrates all core MCP capabilities (tools, resources, prompts, sampling, elicitation) via stdio transport |
+| 06 | [Agent MCP Translator](#06--agent-mcp-translator) | Autonomous Polish-to-English file translator: watches a directory, uses MCP file tools and the Responses API agentic loop to translate each file |
 
 ---
 
@@ -155,3 +156,39 @@ dotnet run
 ```
 
 Configuration in `appsettings.json` — API base URL and model are adjustable without recompiling. By default it targets OpenRouter with `openai/gpt-4o-mini`.
+
+---
+
+### 06 — Agent MCP Translator
+
+**Folder:** `06-agent-mcp-translator`
+
+An autonomous translation agent that watches a directory for Polish files and translates them to English using an agentic loop over the OpenAI Responses API. File operations (read, write, list, mkdir) are handled by a local MCP file server that the agent spawns as a subprocess and communicates with over stdio.
+
+**What it teaches:**
+
+1. **Responses API agentic loop** — unlike the Chat Completions API, the Responses API tracks state via `InputItems` and `OutputItems` lists rather than `messages`. The loop appends all output items (including `FunctionCallResponseItem`) to the next request's inputs, then appends `FunctionCallOutputResponseItem` for each tool result. The cycle repeats until the model returns no more tool calls.
+2. **MCP client with stdio transport** — `McpClient.CreateAsync(StdioClientTransport)` spawns a subprocess (the same executable with `--server`) and establishes a JSON-RPC channel over stdin/stdout. `ListToolsAsync()` returns `McpClientTool` objects whose `JsonSchema` property directly feeds `ResponseTool.CreateFunctionTool()` — no manual schema translation needed.
+3. **Self-spawning MCP server** — the executable detects `--server` on the command line and switches into MCP server mode using `Host.CreateApplicationBuilder` + `AddMcpServer().WithStdioServerTransport().WithTools<T>()`. The parent passes `FS_ROOT` via environment variable to scope all file operations to the workspace directory.
+4. **Sandboxed file tools** — `FileSystemTools` resolves every path through `Path.GetFullPath(Path.Combine(fsRoot, …))` and verifies the result starts with `fsRoot` before touching the filesystem, blocking path traversal attacks.
+5. **Chunked translation strategy** — the system prompt instructs the model to check line count first, then translate in 80-line chunks for large files (read → translate → write/append), keeping each API call within token limits.
+6. **HTTP translation endpoint** — `HttpListener` exposes `POST /api/translate` for on-demand text translation without the file watching loop.
+
+**Run:**
+
+```bash
+cd 06-agent-mcp-translator/AgentMcpTranslator
+dotnet run
+```
+
+Drop any `.md`, `.txt`, `.html`, or `.json` file into `workspace/translate/` — the agent detects it within 5 seconds and writes the English version to `workspace/translated/`. The example file `protokol-mcp.md` is included to test immediately.
+
+On-demand translation via HTTP:
+
+```bash
+curl -s -X POST http://localhost:3000/api/translate \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Witaj świecie! To jest przykładowy tekst po polsku."}' | jq
+```
+
+Configuration in `appsettings.json` — model, API base URL, source/target directories, poll interval, and HTTP port are all adjustable without recompiling.
