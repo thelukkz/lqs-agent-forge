@@ -151,7 +151,6 @@ A complete tour of the Model Context Protocol (MCP) in a single .NET project. Th
 
 ```bash
 cd 05-agent-mcp-core/AgentMcpCore
-dotnet user-secrets set "OpenAI:ApiKey" "your-key"
 dotnet run
 ```
 
