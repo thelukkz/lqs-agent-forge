@@ -17,6 +17,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 07 | [Agent MCP Uploader](#07--agent-mcp-uploader) | Agent orchestrating two local MCP servers (stdio + HTTP) to upload files from a source workspace to a local vault, demonstrating multi-server routing and placeholder resolution |
 | 08 | [Agent Voice Chat](#08--agent-voice-chat) | Voice conversation loop: records from microphone with silence detection, transcribes via Whisper, gets LLM response, plays it back as speech |
 | 09 | [Agent Image Editor](#09--agent-image-editor) | Interactive image generation and editing agent: generates images via Gemini, analyzes quality with a vision model, and retries automatically until accepted |
+| 10 | [Agent Vision Classifier](#10--agent-vision-classifier) | Autonomous image classification agent: reads character profiles from knowledge files, analyzes images with a vision tool, and sorts them into labeled folders |
 
 ---
 
@@ -282,3 +283,32 @@ dotnet run
 ```
 
 Describe what you want to generate in plain language. To edit an existing image, drop it into `workspace/input/` first and mention the filename. Type `clear` to reset the conversation history, `exit` to quit. The visual style is controlled by `workspace/style-guide.md` — edit it to change the aesthetic before running.
+
+---
+
+### 10 — Agent Vision Classifier
+
+**Folder:** `10-agent-vision-classifier`
+
+Reads character profile descriptions from `workspace/knowledge/` markdown files, then autonomously classifies all images in `workspace/images/` by calling a vision tool for each profile criterion. Classified images are copied to `workspace/images/organized/<character>/`. The agent handles multiple matches (copies to all matching folders), negative criteria (features that must be absent), and images that cannot be classified.
+
+**What it teaches:**
+
+1. **Vision as a callable tool** — `understand_image` is a native tool the LLM invokes during its agentic loop. The agent decides when to call it and what question to ask; the handler encodes the image as base64, calls `ChatClient.CompleteChatAsync` with `CreateImagePart`, and returns the answer as a tool result. Vision is a tool, not application logic.
+
+2. **Hybrid Responses API + Chat Completions** — the agentic loop runs on the Responses API (`ResponsesClient`), while vision analysis runs on Chat Completions (`ChatClient`). Both clients share one API key and base URL but operate independently — a pattern required because the Responses API does not expose image content parts in the .NET SDK.
+
+3. **Knowledge-file-driven classification** — character profiles are plain markdown files read at runtime, not hardcoded logic. Changing what gets classified requires only editing a text file in `workspace/knowledge/`.
+
+4. **Negative criteria in prompts** — profiles can include features that must be absent ("does not wear glasses"). The system prompt explicitly instructs the agent to confirm absence only when the relevant area is clearly visible, and to verify the face exists before any criterion check.
+
+5. **Path safety in tool handlers** — every file operation resolves through `Path.GetFullPath` + prefix check against the workspace root, blocking path traversal while still accepting relative paths from the LLM.
+
+**Run:**
+
+```bash
+cd 10-agent-vision-classifier/AgentVisionClassifier
+dotnet run
+```
+
+Drop images into `workspace/images/` before running. Profile `.md` files in `workspace/knowledge/` control the classification criteria — add, remove, or edit them to change what the agent looks for. Results appear in `workspace/images/organized/<character>/`.
