@@ -16,6 +16,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 06 | [Agent MCP Translator](#06--agent-mcp-translator) | Autonomous Polish-to-English file translator: watches a directory, uses MCP file tools and the Responses API agentic loop to translate each file |
 | 07 | [Agent MCP Uploader](#07--agent-mcp-uploader) | Agent orchestrating two local MCP servers (stdio + HTTP) to upload files from a source workspace to a local vault, demonstrating multi-server routing and placeholder resolution |
 | 08 | [Agent Voice Chat](#08--agent-voice-chat) | Voice conversation loop: records from microphone with silence detection, transcribes via Whisper, gets LLM response, plays it back as speech |
+| 09 | [Agent Image Editor](#09--agent-image-editor) | Interactive image generation and editing agent: generates images via Gemini, analyzes quality with a vision model, and retries automatically until accepted |
 
 ---
 
@@ -252,3 +253,32 @@ dotnet run
 ```
 
 Speak into the microphone — 1.5 seconds of silence ends your turn. The transcription, AI response, and synthesized audio play back automatically. Adjust `Recording:SilenceThresholdDb` (default `-40`) and `Recording:SilenceDurationMs` (default `1500`) in `appsettings.json` to tune silence detection for your environment.
+
+---
+
+### 09 — Agent Image Editor
+
+**Folder:** `09-agent-image-editor`
+
+An interactive REPL agent that generates and edits images on request, then automatically evaluates each result with a vision model before accepting it. The user describes what they want in plain language; the agent constructs the prompt, calls the image model, runs quality analysis, and retries up to two times if the result has blocking issues. Generated images land in `workspace/output/`; reference images for editing go in `workspace/input/`.
+
+**What it teaches:**
+
+1. **Gemini image generation via OpenRouter** — image generation is invoked through the standard OpenRouter `/chat/completions` endpoint by adding `"modalities": ["image", "text"]` to the request. The model returns the generated image as a base64 data URL inside the response body — a different shape than a text completion, requiring explicit parsing of `message.images[0].image_url.url` or the content-array fallback.
+
+2. **Vision-based quality analysis** — after each generation the same multimodal model (`gemini-2.5-flash`) receives the saved image as `BinaryData` via `ChatMessageContentPart.CreateImagePart` alongside a structured analysis prompt. It returns a structured `VERDICT: ACCEPT/RETRY` report with a numeric score and blocking issues. The image is kept out of the main conversation history so it doesn't inflate the token count across turns.
+
+3. **Self-correcting agent loop** — the LLM is instructed to call `analyze_image` after every `create_image` and act on the verdict autonomously: if `RETRY`, it refines the prompt based on `NEXT_PROMPT_HINT` and generates again, up to two times. This generate → evaluate → retry cycle is a reusable pattern for any agent that produces artifacts with measurable quality.
+
+4. **Style guide injection** — `workspace/style-guide.md` is read at startup and injected into the system prompt inside a `<style_guide>` block. This decouples visual requirements from code: changing the target aesthetic (e.g. from pencil sketch to oil painting) requires only editing a Markdown file, not modifying the agent logic.
+
+5. **Dual-model configuration with one API key** — two models serve distinct roles (`OpenAI:Model` for chat/vision, `OpenAI:ImageModel` for generation) but share a single OpenRouter key and base URL. The pattern `string.IsNullOrEmpty(key)` is used as the null guard instead of `??` because empty strings from `appsettings.json` are not caught by the null-coalescing operator.
+
+**Run:**
+
+```bash
+cd 09-agent-image-editor/AgentImageEditor
+dotnet run
+```
+
+Describe what you want to generate in plain language. To edit an existing image, drop it into `workspace/input/` first and mention the filename. Type `clear` to reset the conversation history, `exit` to quit. The visual style is controlled by `workspace/style-guide.md` — edit it to change the aesthetic before running.
