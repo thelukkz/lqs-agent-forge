@@ -1,0 +1,10 @@
+MCP Uploader — sample text file
+================================
+
+This plain-text file is a second upload target.
+Both files will be stored in the vault and assigned local HTTP URLs.
+
+Key patterns demonstrated:
+- Two MCP servers connected simultaneously (files + vault)
+- Tool name prefixing: files__fs_list, vault__vault_store
+- Placeholder resolution: {{file:sample.txt}} → base64

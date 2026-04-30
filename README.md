@@ -14,6 +14,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 04 | [Agent Sandbox Filesystem](#04--agent-sandbox-filesystem) | Agent that performs sandboxed file operations via tool use (function calling) with path traversal protection |
 | 05 | [Agent MCP Core](#05--agent-mcp-core) | Demonstrates all core MCP capabilities (tools, resources, prompts, sampling, elicitation) via stdio transport |
 | 06 | [Agent MCP Translator](#06--agent-mcp-translator) | Autonomous Polish-to-English file translator: watches a directory, uses MCP file tools and the Responses API agentic loop to translate each file |
+| 07 | [Agent MCP Uploader](#07--agent-mcp-uploader) | Agent orchestrating two local MCP servers (stdio + HTTP) to upload files from a source workspace to a local vault, demonstrating multi-server routing and placeholder resolution |
 
 ---
 
@@ -192,3 +193,32 @@ curl -s -X POST http://localhost:3000/api/translate \
 ```
 
 Configuration in `appsettings.json` — model, API base URL, source/target directories, poll interval, and HTTP port are all adjustable without recompiling.
+
+---
+
+### 07 — Agent MCP Uploader
+
+**Folder:** `07-agent-mcp-uploader`
+
+An agent that orchestrates two local MCP servers simultaneously to upload files from a source workspace to a local vault. The same executable runs in three modes: as the `files` MCP server, as the `vault` MCP server, or as the agent that spawns and connects to both.
+
+**What it teaches:**
+
+1. **Multi-server MCP orchestration** — a single agent maintains two independent `McpClient` connections at the same time: one to the `files` server (reads source files) and one to the `vault` server (stores files). Each server runs as a subprocess spawned via `StdioClientTransport`. This is the core step beyond single-server MCP: the agent operates across independent capability domains simultaneously.
+
+2. **Tool name prefixing as a routing mechanism** — tools from both servers are exposed to the LLM under prefixed names: `files__fs_list`, `files__fs_read`, `vault__vault_store`, `vault__vault_list`. When the model calls a tool, the agent strips the prefix to identify the target server and the actual tool name. This pattern scales to any number of servers without schema collisions.
+
+3. **Placeholder resolution** — instead of calling `files__fs_read` to get base64 content and passing it to `vault__vault_store`, the model writes `{{file:hello.md}}` in the `base64` argument. Before the MCP call is dispatched, `PlaceholderResolver` replaces every `{{file:path}}` occurrence with the actual base64-encoded file content read directly from disk. The model never handles raw bytes; the conversation history stays small.
+
+4. **Dual-purpose MCP server process** — the vault subprocess runs two things concurrently: a stdio MCP server (JSON-RPC over stdin/stdout, for tool calls from the agent) and an `HttpListener` HTTP server (for serving stored files at `http://localhost:5001/files/{name}`). Both are started from the same process with no framework overhead.
+
+**Run:**
+
+```bash
+cd 07-agent-mcp-uploader/AgentMcpUploader
+dotnet run
+```
+
+Drop additional files into `workspace/source/` before running — the agent will upload everything not yet in the vault. Uploaded files land in `workspace/vault/` and are accessible at `http://localhost:5001/files/{filename}` for the duration of the run.
+
+Configuration in `appsettings.json` — model, API base URL, workspace paths, and vault HTTP port are adjustable without recompiling.
