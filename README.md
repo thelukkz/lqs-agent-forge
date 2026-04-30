@@ -15,6 +15,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 05 | [Agent MCP Core](#05--agent-mcp-core) | Demonstrates all core MCP capabilities (tools, resources, prompts, sampling, elicitation) via stdio transport |
 | 06 | [Agent MCP Translator](#06--agent-mcp-translator) | Autonomous Polish-to-English file translator: watches a directory, uses MCP file tools and the Responses API agentic loop to translate each file |
 | 07 | [Agent MCP Uploader](#07--agent-mcp-uploader) | Agent orchestrating two local MCP servers (stdio + HTTP) to upload files from a source workspace to a local vault, demonstrating multi-server routing and placeholder resolution |
+| 08 | [Agent Voice Chat](#08--agent-voice-chat) | Voice conversation loop: records from microphone with silence detection, transcribes via Whisper, gets LLM response, plays it back as speech |
 
 ---
 
@@ -222,3 +223,32 @@ dotnet run
 Drop additional files into `workspace/source/` before running — the agent will upload everything not yet in the vault. Uploaded files land in `workspace/vault/` and are accessible at `http://localhost:5001/files/{filename}` for the duration of the run.
 
 Configuration in `appsettings.json` — model, API base URL, workspace paths, and vault HTTP port are adjustable without recompiling.
+
+---
+
+### 08 — Agent Voice Chat
+
+**Folder:** `08-agent-voice-chat`
+
+An interactive voice conversation loop: the user speaks into the microphone, the speech is transcribed and sent to an LLM, and the response is synthesized back as audio and played through the speakers — entirely over OpenRouter with a single API key.
+
+**What it teaches:**
+
+1. **Microphone recording with silence detection** — NAudio's `WaveInEvent` captures audio from the default input device. Each buffer is checked for RMS amplitude converted to dB; once the signal has been above the silence threshold (speech detected) and then stays below it for a configurable duration, recording stops automatically. No keypress needed to end the turn.
+
+2. **Audio content parts in chat completions** — instead of a dedicated `/v1/audio/transcriptions` endpoint (which OpenRouter does not support in multipart form-data format), the WAV file is read as bytes and attached to a `UserChatMessage` via `ChatMessageContentPart.CreateInputAudioPart(BinaryData, ChatInputAudioFormat.Wav)`. The multimodal model transcribes it through the standard chat completions path.
+
+3. **Three independent API clients from one key** — `Chat`, `Transcribe`, and `Tts` each have their own `BaseUrl`, `Model`, and `ApiKey` config section, all defaulting to OpenRouter. Empty `ApiKey` fields fall back to `Chat:ApiKey`, so a single key is enough. The pattern `string.IsNullOrEmpty(config["X:ApiKey"]) ? fallback : value` is the correct guard — `??` alone misses empty strings set in `appsettings.json`.
+
+4. **Raw PCM playback** — Gemini TTS via OpenRouter returns raw PCM audio (24 kHz, 16-bit, mono), not a container format. NAudio's `RawSourceWaveStream` wraps the byte stream with an explicit `WaveFormat` so `WaveOutEvent` can play it directly without any header parsing.
+
+5. **Stateful multi-turn conversation** — the `messages` list grows with each exchange (`UserChatMessage` + `AssistantChatMessage`), giving the LLM full context across turns. The transcription client uses a separate, ephemeral call that does not touch this history.
+
+**Run:**
+
+```bash
+cd 08-agent-voice-chat/AgentVoiceChat
+dotnet run
+```
+
+Speak into the microphone — 1.5 seconds of silence ends your turn. The transcription, AI response, and synthesized audio play back automatically. Adjust `Recording:SilenceThresholdDb` (default `-40`) and `Recording:SilenceDurationMs` (default `1500`) in `appsettings.json` to tune silence detection for your environment.
