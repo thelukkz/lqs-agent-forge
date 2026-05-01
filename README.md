@@ -18,6 +18,7 @@ A personal lab for building and testing AI agents, pipelines, and tools. Each ex
 | 08 | [Agent Voice Chat](#08--agent-voice-chat) | Voice conversation loop: records from microphone with silence detection, transcribes via Whisper, gets LLM response, plays it back as speech |
 | 09 | [Agent Image Editor](#09--agent-image-editor) | Interactive image generation and editing agent: generates images via Gemini, analyzes quality with a vision model, and retries automatically until accepted |
 | 10 | [Agent Vision Classifier](#10--agent-vision-classifier) | Autonomous image classification agent: reads character profiles from knowledge files, analyzes images with a vision tool, and sorts them into labeled folders |
+| 11 | [Agent PDF Report](#11--agent-pdf-report) | Autonomous report agent: generates a structured HTML document from a template, optionally adds AI-generated images, and exports a print-ready PDF via PuppeteerSharp |
 
 ---
 
@@ -311,4 +312,31 @@ cd 10-agent-vision-classifier/AgentVisionClassifier
 dotnet run
 ```
 
-Drop images into `workspace/images/` before running. Profile `.md` files in `workspace/knowledge/` control the classification criteria — add, remove, or edit them to change what the agent looks for. Results appear in `workspace/images/organized/<character>/`.
+---
+
+### 11 — Agent PDF Report
+
+**Folder:** `11-agent-pdf-report`
+
+An interactive REPL agent that generates professional, print-ready PDF reports from a plain-language description. The user describes the document; the agent reads an HTML template, writes a structured HTML file using the design system components, and converts it to PDF via headless Chromium — entirely through tool calls.
+
+**What it teaches:**
+
+1. **PuppeteerSharp as an agent tool** — `html_to_pdf` is a native tool the LLM invokes like any other. `BrowserFetcher` downloads Chromium on first run; `Page.PdfAsync` with `PrintBackground = true` is required to preserve dark-theme colors in the rendered PDF. This is the "artifact executor" pattern — the agent produces a file, not just text.
+
+2. **Print-optimized CSS design system** — `@page { size: A4; margin: 0; }` removes browser margins (controlled instead by CSS padding on `.page`), `print-color-adjust: exact` forces Chromium to render dark background colors, and `page-break-after: always` / `page-break-inside: avoid` eliminate page-split artifacts in multi-page documents.
+
+3. **Template-based document generation** — the agent reads `workspace/template.html` (full `<head>` with all CSS) and `workspace/style-guide.md` (component documentation) before every document. It copies the `<head>` verbatim and replaces only the `<body>` — changing the visual style of every document requires editing a single template file, not the agent code.
+
+4. **Multi-turn REPL with persistent history** — `conversationInputs` grows across all turns in a session. Each new user message is appended to the same list, enabling iterative refinement ("add a summary table", "change the accent color") without losing context. `clear` resets the history.
+
+5. **Workspace path safety** — `SafePath` resolves every relative path through `Path.GetFullPath(Path.Combine(workspaceRoot, ...))` and verifies the prefix, blocking the LLM from reading or writing outside the `workspace/` directory.
+
+**Run:**
+
+```bash
+cd 11-agent-pdf-report/AgentPdfReport
+dotnet run
+```
+
+Describe the document you want, e.g. `Create a 3-page report about SOLID principles`. The first run downloads Chromium (~150 MB). Generated HTML files land in `workspace/html/`, PDFs in `workspace/output/`. Type `clear` to reset the conversation, `exit` to quit.
